@@ -103,7 +103,7 @@ const processDocumentsWithGemini = async (files: File[], manualApiKey?: string):
   };
 
   try {
-    const modelId = "gemini-3-pro-preview";
+    const modelId = "gemini-2.5-flash";
     
     // Prepare all file parts
     const fileParts = await Promise.all(files.map(f => fileToGenerativePart(f)));

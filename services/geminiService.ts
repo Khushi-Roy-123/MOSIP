@@ -1,3 +1,4 @@
+
 import { GoogleGenAI, Type, Schema } from "@google/genai";
 import { OCRResult } from "../types";
 
@@ -38,10 +39,29 @@ const createFieldSchema = (description?: string) => ({
   }
 });
 
-const processDocumentsWithGemini = async (files: File[]): Promise<OCRResult> => {
-  const apiKey = process.env.API_KEY;
+// Helper to retrieve API Key from various environment configurations
+export const getEnvironmentApiKey = (): string | undefined => {
+  // Check Vite (standard for modern React)
+  const meta = import.meta as any;
+  if (typeof meta !== 'undefined' && meta.env && meta.env.VITE_GEMINI_API_KEY) {
+    return meta.env.VITE_GEMINI_API_KEY;
+  }
+  // Check Create React App
+  if (typeof process !== 'undefined' && process.env && process.env.REACT_APP_GEMINI_API_KEY) {
+    return process.env.REACT_APP_GEMINI_API_KEY;
+  }
+  // Check Node/Standard
+  if (typeof process !== 'undefined' && process.env && process.env.API_KEY) {
+    return process.env.API_KEY;
+  }
+  return undefined;
+};
+
+const processDocumentsWithGemini = async (files: File[], manualApiKey?: string): Promise<OCRResult> => {
+  const apiKey = manualApiKey || getEnvironmentApiKey();
+  
   if (!apiKey) {
-    throw new Error("API Key not found");
+    throw new Error("API Key not found. Please configure VITE_GEMINI_API_KEY in .env or provide it manually.");
   }
 
   const ai = new GoogleGenAI({ apiKey });

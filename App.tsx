@@ -1,5 +1,6 @@
-import React, { useState, useRef } from 'react';
-import { processDocumentsWithGemini } from './services/geminiService';
+
+import React, { useState, useRef, useEffect } from 'react';
+import { processDocumentsWithGemini, getEnvironmentApiKey } from './services/geminiService';
 import { AppState, OCRResult, DocumentFile, AppMode, UserSubmittedData, FieldComparisonResult } from './types';
 import QualityIndicator from './components/QualityIndicator';
 import VerificationField from './components/VerificationField';
@@ -10,11 +11,6 @@ import DataInputForm from './components/DataInputForm';
 import VerificationComparison from './components/VerificationComparison';
 import { mapToMosipSchema, MosipIdentityJSON, APIResponse } from './services/mosipService';
 import { compareData } from './utils/comparisonUtils';
-
-// Ensure API key is present
-if (!process.env.API_KEY) {
-  console.error("Missing API_KEY in environment variables.");
-}
 
 function App() {
   const [appState, setAppState] = useState<AppState>(AppState.MODE_SELECTION);
@@ -30,8 +26,33 @@ function App() {
   const [userData, setUserData] = useState<UserSubmittedData | null>(null);
   const [comparisonResults, setComparisonResults] = useState<FieldComparisonResult[]>([]);
 
+  // API Key State
+  const [apiKey, setApiKey] = useState<string>('');
+  const [showKeyModal, setShowKeyModal] = useState<boolean>(false);
+
   // File input ref
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    // Check for API key in env or local storage on load
+    const envKey = getEnvironmentApiKey();
+    if (envKey) {
+      setApiKey(envKey);
+    } else {
+      const storedKey = localStorage.getItem('gemini_api_key');
+      if (storedKey) {
+        setApiKey(storedKey);
+      } else {
+        setShowKeyModal(true);
+      }
+    }
+  }, []);
+
+  const handleSaveApiKey = (key: string) => {
+    setApiKey(key);
+    localStorage.setItem('gemini_api_key', key);
+    setShowKeyModal(false);
+  };
 
   const selectMode = (mode: AppMode) => {
     setAppMode(mode);
@@ -52,7 +73,6 @@ function App() {
         type: file.type === 'application/pdf' ? 'pdf' : 'image'
       }));
       setFiles(prev => [...prev, ...newDocumentFiles]);
-      // Stay in IDLE to allow adding more files, or click process
     }
   };
 
@@ -73,6 +93,10 @@ function App() {
 
   const startExtraction = async () => {
     if (files.length === 0) return;
+    if (!apiKey) {
+        setShowKeyModal(true);
+        return;
+    }
 
     setAppState(AppState.ANALYZING);
     setLoadingMessage("Analyzing document quality...");
@@ -81,7 +105,8 @@ function App() {
       const rawFiles = files.map(f => f.file);
 
       setLoadingMessage("Extracting text, detecting handwriting & language...");
-      const result = await processDocumentsWithGemini(rawFiles);
+      // Pass the state API key to the service
+      const result = await processDocumentsWithGemini(rawFiles, apiKey);
       setOcrResult(result);
 
       if (appMode === AppMode.VERIFICATION && userData) {
@@ -93,7 +118,7 @@ function App() {
       setAppState(AppState.VERIFYING);
     } catch (error) {
       console.error(error);
-      alert("Extraction failed. Please ensure the image is clear and try again.");
+      alert(`Extraction failed: ${error instanceof Error ? error.message : "Unknown error"}`);
       setAppState(AppState.IDLE);
     }
   };
@@ -157,6 +182,38 @@ function App() {
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col font-sans text-gray-800">
       
+      {/* API Key Modal */}
+      {showKeyModal && (
+          <div className="fixed inset-0 z-[100] bg-black/50 backdrop-blur-sm flex items-center justify-center p-4">
+              <div className="bg-white rounded-xl shadow-2xl p-8 max-w-md w-full animate-fade-in-up">
+                  <div className="flex items-center gap-3 mb-4 text-mosip-blue">
+                      <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11.536 19.464a3 3 0 00-.049 1.912 2.004 2.004 0 011.664-.89l.812-1.22 2.12-2.12a2.001 2.001 0 00-2.827 0l-.707.707 2.12 2.12a2 2 0 002.828 0 2 2 0 000-2.828l.586-.586z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 9a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9a2 2 0 012-2h5z" /></svg>
+                      <h2 className="text-xl font-bold text-gray-900">Configure API Key</h2>
+                  </div>
+                  <p className="text-gray-600 mb-6 text-sm">
+                      To run this app locally, you need a Google Gemini API Key. 
+                      You can get one for free at <a href="https://aistudio.google.com/app/apikey" target="_blank" className="text-blue-600 underline">Google AI Studio</a>.
+                  </p>
+                  <form onSubmit={(e) => { e.preventDefault(); const val = (e.currentTarget.elements.namedItem('key') as HTMLInputElement).value; if(val) handleSaveApiKey(val); }}>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">Gemini API Key</label>
+                      <input 
+                          name="key"
+                          type="password" 
+                          placeholder="AIzaSy..." 
+                          className="w-full border border-gray-300 rounded-lg p-3 focus:ring-2 focus:ring-mosip-blue focus:border-mosip-blue outline-none mb-4 font-mono"
+                          autoFocus
+                      />
+                      <button type="submit" className="w-full bg-mosip-blue text-white font-bold py-3 rounded-lg hover:bg-blue-700 transition-colors">
+                          Save & Continue
+                      </button>
+                  </form>
+                  <p className="text-xs text-gray-400 mt-4 text-center">
+                      The key is stored in your browser's LocalStorage only.
+                  </p>
+              </div>
+          </div>
+      )}
+
       {/* Header - Hidden on Print */}
       <header className="bg-white shadow-sm sticky top-0 z-50 print:hidden">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
@@ -178,6 +235,9 @@ function App() {
                      Verifying: <strong>{userData.name}</strong>
                  </div>
              )}
+             <button onClick={() => setShowKeyModal(true)} className="text-xs text-gray-400 hover:text-gray-600 underline">
+                 API Key
+             </button>
           </div>
         </div>
       </header>

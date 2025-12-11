@@ -3,6 +3,8 @@ export interface ExtractedField {
   confidence: number; // 0-100
   label: string;
   isHandwritten?: boolean;
+  boundingBox?: number[]; // [ymin, xmin, ymax, xmax] normalized 0-1000
+  sourcePageIdx?: number; // Index of the page where this field was found
 }
 
 export interface QualityMetrics {
@@ -23,10 +25,18 @@ export interface OCRResult {
 
 export enum AppState {
   IDLE,
+  MODE_SELECTION,
+  INPUT_DATA,     // User entering data for verification
+  GENERATING_FORM,
   ANALYZING,
   VERIFYING,
   SUBMITTING,
   SUCCESS
+}
+
+export enum AppMode {
+  EXTRACTION, // API 1
+  VERIFICATION // API 2
 }
 
 export interface DocumentFile {
@@ -34,4 +44,24 @@ export interface DocumentFile {
   file: File;
   preview: string;
   type: 'image' | 'pdf';
+}
+
+export interface UserSubmittedData {
+  name: string;
+  age: string;
+  gender: string;
+  address: string;
+  idNumber: string;
+  email: string;
+  phone: string;
+}
+
+export interface FieldComparisonResult {
+  fieldKey: string;
+  claimedValue: string;
+  extractedValue: string;
+  matchScore: number; // 0-100
+  status: 'MATCH' | 'MISMATCH' | 'PARTIAL' | 'MISSING';
+  isHandwritten?: boolean;
+  confidence: number; // OCR Confidence
 }

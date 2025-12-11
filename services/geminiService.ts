@@ -19,6 +19,25 @@ export const fileToGenerativePart = async (file: File): Promise<{ inlineData: { 
   });
 };
 
+const createFieldSchema = (description?: string) => ({
+  type: Type.OBJECT,
+  properties: {
+    value: { type: Type.STRING, description },
+    confidence: { type: Type.NUMBER },
+    label: { type: Type.STRING },
+    isHandwritten: { type: Type.BOOLEAN, description: "True if this specific field value is handwritten" },
+    boundingBox: {
+      type: Type.ARRAY,
+      items: { type: Type.NUMBER },
+      description: "Bounding box of the detected text in [ymin, xmin, ymax, xmax] format (scale 0-1000)."
+    },
+    sourcePageIdx: {
+      type: Type.INTEGER,
+      description: "The index of the page (0-based) where this field was found."
+    }
+  }
+});
+
 const processDocumentsWithGemini = async (files: File[]): Promise<OCRResult> => {
   const apiKey = process.env.API_KEY;
   if (!apiKey) {
@@ -51,69 +70,13 @@ const processDocumentsWithGemini = async (files: File[]): Promise<OCRResult> => 
         type: Type.OBJECT,
         description: "Extracted fields. Consolidate info if multiple pages.",
         properties: {
-          name: {
-            type: Type.OBJECT,
-            properties: {
-              value: { type: Type.STRING },
-              confidence: { type: Type.NUMBER },
-              label: { type: Type.STRING },
-              isHandwritten: { type: Type.BOOLEAN, description: "True if this specific field value is handwritten" }
-            }
-          },
-          age: {
-            type: Type.OBJECT,
-            properties: {
-              value: { type: Type.STRING },
-              confidence: { type: Type.NUMBER },
-              label: { type: Type.STRING },
-              isHandwritten: { type: Type.BOOLEAN }
-            }
-          },
-          gender: {
-            type: Type.OBJECT,
-            properties: {
-              value: { type: Type.STRING },
-              confidence: { type: Type.NUMBER },
-              label: { type: Type.STRING },
-              isHandwritten: { type: Type.BOOLEAN }
-            }
-          },
-          address: {
-            type: Type.OBJECT,
-            properties: {
-              value: { type: Type.STRING },
-              confidence: { type: Type.NUMBER },
-              label: { type: Type.STRING },
-              isHandwritten: { type: Type.BOOLEAN }
-            }
-          },
-          idNumber: {
-            type: Type.OBJECT,
-            properties: {
-              value: { type: Type.STRING },
-              confidence: { type: Type.NUMBER },
-              label: { type: Type.STRING },
-              isHandwritten: { type: Type.BOOLEAN }
-            }
-          },
-          email: {
-            type: Type.OBJECT,
-            properties: {
-              value: { type: Type.STRING },
-              confidence: { type: Type.NUMBER },
-              label: { type: Type.STRING },
-              isHandwritten: { type: Type.BOOLEAN }
-            }
-          },
-          phone: {
-            type: Type.OBJECT,
-            properties: {
-              value: { type: Type.STRING },
-              confidence: { type: Type.NUMBER },
-              label: { type: Type.STRING },
-              isHandwritten: { type: Type.BOOLEAN }
-            }
-          }
+          name: createFieldSchema("Full Name"),
+          age: createFieldSchema("Age"),
+          gender: createFieldSchema("Gender"),
+          address: createFieldSchema("Full Address"),
+          idNumber: createFieldSchema("ID Number"),
+          email: createFieldSchema("Email Address"),
+          phone: createFieldSchema("Phone Number")
         }
       }
     }
@@ -137,22 +100,37 @@ const processDocumentsWithGemini = async (files: File[]): Promise<OCRResult> => 
             2. **Extraction**: Extract Name, Age (or calculate from DOB), Gender, Address, ID Number, Email, and Phone.
             3. **Consolidation**: If multiple images are provided (e.g., front/back or multiple pages), combine the information into a single record.
             4. **Handwriting**: Explicitly flag if specific fields are handwritten.
-            5. **Language**: Detect the primary language. If it is non-Latin (e.g., Arabic, Hindi), transiterate keys to English but keep values in original script unless it's a standard field like 'Gender' which should be normalized to English.
-            6. **Confidence**: Provide a confidence score (0-100) based on clarity and ambiguity.`
+            5. **Language**: Detect the primary language.
+            6. **Confidence & Zoning**: Provide a confidence score (0-100). CRITICAL: Provide the 'boundingBox' [ymin, xmin, ymax, xmax] (0-1000 scale) for where the text was found on the image. Identify which page index (0, 1, etc.) the data came from.`
           }
         ]
       },
       config: {
         responseMimeType: "application/json",
         responseSchema: responseSchema,
-        thinkingConfig: { thinkingBudget: 2048 } // Increased budget for multi-page reasoning
+        thinkingConfig: { thinkingBudget: 2048 }
       }
     });
 
     const jsonText = response.text;
     if (!jsonText) throw new Error("No data returned from AI");
 
-    return JSON.parse(jsonText) as OCRResult;
+    const parsedResult = JSON.parse(jsonText);
+
+    // Defensive Coding: Ensure 'quality' and 'fields' exist even if model hallucinates partial structure
+    const safeResult: OCRResult = {
+      detectedLanguage: parsedResult.detectedLanguage || "Unknown",
+      documentType: parsedResult.documentType || "Unknown",
+      fields: parsedResult.fields || {},
+      quality: parsedResult.quality || {
+        blurScore: 0,
+        lightingScore: 0,
+        isReadable: false,
+        issues: ["Quality metrics not returned by AI"]
+      }
+    };
+
+    return safeResult;
 
   } catch (error) {
     console.error("OCR Extraction Error:", error);

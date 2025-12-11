@@ -6,6 +6,10 @@ interface QualityIndicatorProps {
 }
 
 const QualityIndicator: React.FC<QualityIndicatorProps> = ({ metrics }) => {
+  if (!metrics) {
+    return null;
+  }
+
   const getScoreColor = (score: number) => {
     if (score >= 8) return 'bg-green-500';
     if (score >= 5) return 'bg-yellow-500';
@@ -62,7 +66,7 @@ const QualityIndicator: React.FC<QualityIndicatorProps> = ({ metrics }) => {
         </div>
       </div>
 
-      {metrics.issues.length > 0 && (
+      {metrics.issues && metrics.issues.length > 0 && (
         <div className="mt-4 pt-3 border-t border-gray-100">
            <p className="text-xs text-red-500 font-medium">
              Detected Issues: {metrics.issues.join(', ')}

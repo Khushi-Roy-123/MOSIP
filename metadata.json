@@ -1,0 +1,7 @@
+{
+  "name": "MosipOCR - Intelligent Verify",
+  "description": "An advanced OCR solution for extracting and verifying data from identity documents and handwritten notes with real-time quality assessment.",
+  "requestFramePermissions": [
+    "camera"
+  ]
+}
